@@ -4,7 +4,7 @@ import xml from "xml";
 import { Formatter } from "@export/formatter";
 import { IContext, XmlComponent } from "@file/xml-components";
 
-import { IPatch, PatchType } from "./from-docx";
+import { IDeepPatch, PatchType } from "./from-docx";
 import { toJson } from "./util";
 import { IRenderedParagraphNode } from "./run-renderer";
 import { replaceTokenInParagraphElement } from "./paragraph-token-replacer";
@@ -16,7 +16,7 @@ const SPLIT_TOKEN = "ɵ";
 
 export const replacer = (
     json: Element,
-    patch: IPatch,
+    patch: IDeepPatch,
     patchText: string,
     renderedParagraphs: readonly IRenderedParagraphNode[],
     context: IContext,

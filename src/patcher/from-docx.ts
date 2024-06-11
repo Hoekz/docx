@@ -23,6 +23,7 @@ type InputDataType = Buffer | string | number[] | Uint8Array | ArrayBuffer | Blo
 export const PatchType = {
     DOCUMENT: "file",
     PARAGRAPH: "paragraph",
+    TEXT: "text",
 } as const;
 
 type ParagraphPatch = {
@@ -35,6 +36,11 @@ type FilePatch = {
     readonly children: readonly FileChild[];
 };
 
+type TextPatch = {
+    readonly type: typeof PatchType.TEXT;
+    readonly text: string;
+};
+
 interface IImageRelationshipAddition {
     readonly key: string;
     readonly mediaDatas: readonly IMediaData[];
@@ -45,7 +51,8 @@ interface IHyperlinkRelationshipAddition {
     readonly hyperlink: { readonly id: string; readonly link: string };
 }
 
-export type IPatch = ParagraphPatch | FilePatch;
+export type IDeepPatch = ParagraphPatch | FilePatch;
+export type IPatch = IDeepPatch | TextPatch;
 
 export interface PatchDocumentOptions {
     readonly patches: { readonly [key: string]: IPatch };
@@ -62,6 +69,20 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
     } as unknown as File;
 
     const map = new Map<string, Element>();
+    // eslint-disable-next-line functional/prefer-readonly-type
+    const textPatches: { [k: string]: TextPatch } = {};
+    // eslint-disable-next-line functional/prefer-readonly-type
+    const otherPatches: { [k: string]: ParagraphPatch | FilePatch } = {};
+
+    for (const [key, value] of Object.entries(options.patches)) {
+        if (value.type === PatchType.TEXT) {
+            // eslint-disable-next-line functional/immutable-data
+            textPatches[key] = value;
+        } else {
+            // eslint-disable-next-line functional/immutable-data
+            otherPatches[key] = value;
+        }
+    }
 
     // eslint-disable-next-line functional/prefer-readonly-type
     const imageRelationshipAdditions: IImageRelationshipAddition[] = [];
@@ -76,8 +97,8 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
             binaryContentMap.set(key, await value.async("uint8array"));
             continue;
         }
-
-        const json = toJson(await value.async("text"));
+        const text = await value.async("text");
+        const json = toJson(applyTextPatches(text, textPatches));
         if (key.startsWith("word/") && !key.endsWith(".xml.rels")) {
             const context: IContext = {
                 file,
@@ -104,7 +125,7 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
             };
             contexts.set(key, context);
 
-            for (const [patchKey, patchValue] of Object.entries(options.patches)) {
+            for (const [patchKey, patchValue] of Object.entries(otherPatches)) {
                 const patchText = `{{${patchKey}}}`;
                 const renderedParagraphs = findLocationOfText(json, patchText);
                 // TODO: mutates json. Make it immutable
@@ -250,3 +271,12 @@ const createRelationshipFile = (): Element => ({
         },
     ],
 });
+const applyTextPatches = (text: string, textPatches: { readonly [k: string]: TextPatch }): string => {
+    let newText = text;
+
+    for (const [key, patch] of Object.entries(textPatches)) {
+        newText = newText.replace(new RegExp(`{{${key}}}`, "g"), patch.text);
+    }
+
+    return newText;
+};

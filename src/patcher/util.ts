@@ -7,7 +7,11 @@ import { Text } from "@file/paragraph/run/run-components/text";
 const formatter = new Formatter();
 
 export const toJson = (xmlData: string): Element => {
-    const xmlObj = xml2js(xmlData, { compact: false, captureSpacesBetweenElements: true }) as Element;
+    const xmlObj = xml2js(xmlData, {
+        compact: false,
+        captureSpacesBetweenElements: true,
+        attributeValueFn: (value) => value.replace(/&/g, "&amp;").replace(/\\n/g, "&#xA;"),
+    }) as Element;
     return xmlObj;
 };
 
