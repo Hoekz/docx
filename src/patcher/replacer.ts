@@ -4,7 +4,7 @@ import xml from "xml";
 import { Formatter } from "@export/formatter";
 import { IContext, XmlComponent } from "@file/xml-components";
 
-import { IPatch, PatchType } from "./from-docx";
+import { IDeepPatch, PatchType } from "./from-docx";
 import { toJson } from "./util";
 import { replaceTokenInParagraphElement } from "./paragraph-token-replacer";
 import { findRunElementIndexWithToken, splitRunElement } from "./paragraph-split-inject";
@@ -22,7 +22,7 @@ export const replacer = ({
     keepOriginalStyles = true,
 }: {
     readonly json: Element;
-    readonly patch: IPatch;
+    readonly patch: IDeepPatch;
     readonly patchText: string;
     readonly context: IContext;
     readonly keepOriginalStyles?: boolean;

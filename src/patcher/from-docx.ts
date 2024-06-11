@@ -22,6 +22,7 @@ export type InputDataType = Buffer | string | number[] | Uint8Array | ArrayBuffe
 export const PatchType = {
     DOCUMENT: "file",
     PARAGRAPH: "paragraph",
+    TEXT: "text",
 } as const;
 
 type ParagraphPatch = {
@@ -34,6 +35,11 @@ type FilePatch = {
     readonly children: readonly FileChild[];
 };
 
+type TextPatch = {
+    readonly type: typeof PatchType.TEXT;
+    readonly text: string;
+};
+
 interface IImageRelationshipAddition {
     readonly key: string;
     readonly mediaDatas: readonly IMediaData[];
@@ -44,7 +50,8 @@ interface IHyperlinkRelationshipAddition {
     readonly hyperlink: { readonly id: string; readonly link: string };
 }
 
-export type IPatch = ParagraphPatch | FilePatch;
+export type IDeepPatch = ParagraphPatch | FilePatch;
+export type IPatch = IDeepPatch | TextPatch;
 
 // From JSZip
 type OutputByType = {
@@ -84,6 +91,20 @@ export const patchDocument = async <T extends PatchDocumentOutputType = PatchDoc
     } as unknown as File;
 
     const map = new Map<string, Element>();
+    // eslint-disable-next-line functional/prefer-readonly-type
+    const textPatches: { [k: string]: TextPatch } = {};
+    // eslint-disable-next-line functional/prefer-readonly-type
+    const otherPatches: { [k: string]: ParagraphPatch | FilePatch } = {};
+
+    for (const [key, value] of Object.entries(patches)) {
+        if (value.type === PatchType.TEXT) {
+            // eslint-disable-next-line functional/immutable-data
+            textPatches[key] = value;
+        } else {
+            // eslint-disable-next-line functional/immutable-data
+            otherPatches[key] = value;
+        }
+    }
 
     // eslint-disable-next-line functional/prefer-readonly-type
     const imageRelationshipAdditions: IImageRelationshipAddition[] = [];
@@ -98,8 +119,8 @@ export const patchDocument = async <T extends PatchDocumentOutputType = PatchDoc
             binaryContentMap.set(key, await value.async("uint8array"));
             continue;
         }
-
-        const json = toJson(await value.async("text"));
+        const text = await value.async("text");
+        const json = toJson(applyTextPatches(text, textPatches));
         if (key.startsWith("word/") && !key.endsWith(".xml.rels")) {
             const context: IContext = {
                 file,
@@ -126,7 +147,7 @@ export const patchDocument = async <T extends PatchDocumentOutputType = PatchDoc
             };
             contexts.set(key, context);
 
-            for (const [patchKey, patchValue] of Object.entries(patches)) {
+            for (const [patchKey, patchValue] of Object.entries(otherPatches)) {
                 const patchText = `{{${patchKey}}}`;
                 // TODO: mutates json. Make it immutable
                 // We need to loop through to catch every occurrence of the patch text
@@ -283,3 +304,12 @@ const createRelationshipFile = (): Element => ({
         },
     ],
 });
+const applyTextPatches = (text: string, textPatches: { readonly [k: string]: TextPatch }): string => {
+    let newText = text;
+
+    for (const [key, patch] of Object.entries(textPatches)) {
+        newText = newText.replace(new RegExp(`{{${key}}}`, "g"), patch.text);
+    }
+
+    return newText;
+};

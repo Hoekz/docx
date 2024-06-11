@@ -129,6 +129,12 @@ const MOCK_XML = `
                             <w:t>Item: {{item_1}}</w:t>
                         </w:r>
                     </w:p>
+                    <w:p w14:paraId="0F2BCCEF" w14:textId="3C3B6707" w:rsidR="00EF161F"
+                        w:rsidRDefault="00EF161F">
+                        <w:r>
+                            <w:t>Item: {{item_2}}</w:t>
+                        </w:r>
+                    </w:p>
                 </w:tc>
                 <w:tc>
                     <w:tcPr>
@@ -239,6 +245,10 @@ describe("from-docx", () => {
                                     link: "https://www.bbc.co.uk/news",
                                 }),
                             ],
+                        },
+                        item_2: {
+                            type: PatchType.TEXT,
+                            text: "Direct insert of text",
                         },
                         // eslint-disable-next-line @typescript-eslint/naming-convention
                         paragraph_replace: {
