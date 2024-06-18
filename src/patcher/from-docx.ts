@@ -7,8 +7,9 @@ import { IMediaData, Media } from "@file/media";
 import { IViewWrapper } from "@file/document-wrapper";
 import { File } from "@file/file";
 import { IContext } from "@file/xml-components";
+import { Relationships } from "@file/relationships";
 import { ImageReplacer } from "@export/packer/image-replacer";
-import { TargetModeType } from "@file/relationships/relationship/relationship";
+import { Relationship, TargetModeType } from "@file/relationships/relationship/relationship";
 import { uniqueId } from "@util/convenience-functions";
 
 import { replacer } from "./replacer";
@@ -16,6 +17,7 @@ import { findLocationOfText } from "./traverser";
 import { toJson } from "./util";
 import { appendRelationship, getNextRelationshipIndex } from "./relationship-manager";
 import { appendContentType } from "./content-types-manager";
+import { appendNumbering } from "./numbering-manager";
 
 // eslint-disable-next-line functional/prefer-readonly-type
 type InputDataType = Buffer | string | number[] | Uint8Array | ArrayBuffer | Blob | NodeJS.ReadableStream;
@@ -51,6 +53,52 @@ interface IHyperlinkRelationshipAddition {
     readonly hyperlink: { readonly id: string; readonly link: string };
 }
 
+interface Numbering {
+    readonly abstractNumId: number | string;
+    readonly numId: number;
+}
+
+class PatchedRelationships extends Relationships {
+    // eslint-disable-next-line functional/prefer-readonly-type
+    public relationships: IHyperlinkRelationshipAddition[] = [];
+
+    public constructor(public readonly wrapper: PatchDocumentWrapper) {
+        super();
+    }
+
+    public override createRelationship(
+        linkId: string,
+        _: string,
+        target: string,
+        __: (typeof TargetModeType)[keyof typeof TargetModeType],
+    ): Relationship {
+        // eslint-disable-next-line functional/immutable-data
+        this.relationships.push({
+            key: this.wrapper.currentKey,
+            hyperlink: {
+                id: linkId,
+                link: target,
+            },
+        });
+        return undefined as unknown as Relationship;
+    }
+}
+
+export class PatchDocumentWrapper implements IViewWrapper {
+    public readonly View = new FileChild("w:document");
+    public readonly Relationships = new PatchedRelationships(this);
+    // eslint-disable-next-line functional/prefer-readonly-type
+    public Numberings: Numbering[] = [];
+    // eslint-disable-next-line functional/prefer-readonly-type
+    public Images: IImageRelationshipAddition[] = [];
+    // eslint-disable-next-line functional/prefer-readonly-type
+    public currentKey = "";
+
+    public apply(): void {
+        // TODO
+    }
+}
+
 export type IDeepPatch = ParagraphPatch | FilePatch;
 export type IPatch = IDeepPatch | TextPatch;
 
@@ -84,11 +132,7 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
         }
     }
 
-    // eslint-disable-next-line functional/prefer-readonly-type
-    const imageRelationshipAdditions: IImageRelationshipAddition[] = [];
-    // eslint-disable-next-line functional/prefer-readonly-type
-    const hyperlinkRelationshipAdditions: IHyperlinkRelationshipAddition[] = [];
-    let hasMedia = false;
+    const wrapper = new PatchDocumentWrapper();
 
     const binaryContentMap = new Map<string, Uint8Array>();
 
@@ -100,27 +144,11 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
         const text = await value.async("text");
         const json = toJson(applyTextPatches(text, textPatches));
         if (key.startsWith("word/") && !key.endsWith(".xml.rels")) {
+            // eslint-disable-next-line functional/immutable-data
+            wrapper.currentKey = key;
             const context: IContext = {
                 file,
-                viewWrapper: {
-                    Relationships: {
-                        createRelationship: (
-                            linkId: string,
-                            _: string,
-                            target: string,
-                            __: (typeof TargetModeType)[keyof typeof TargetModeType],
-                        ) => {
-                            // eslint-disable-next-line functional/immutable-data
-                            hyperlinkRelationshipAdditions.push({
-                                key,
-                                hyperlink: {
-                                    id: linkId,
-                                    link: target,
-                                },
-                            });
-                        },
-                    },
-                } as unknown as IViewWrapper,
+                viewWrapper: wrapper,
                 stack: [],
             };
             contexts.set(key, context);
@@ -138,7 +166,7 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
                             if (element instanceof ExternalHyperlink) {
                                 const concreteHyperlink = new ConcreteHyperlink(element.options.children, uniqueId());
                                 // eslint-disable-next-line functional/immutable-data
-                                hyperlinkRelationshipAdditions.push({
+                                wrapper.Relationships.relationships.push({
                                     key,
                                     hyperlink: {
                                         id: concreteHyperlink.linkId,
@@ -161,9 +189,8 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
 
             const mediaDatas = imageReplacer.getMediaData(JSON.stringify(json), context.file.Media);
             if (mediaDatas.length > 0) {
-                hasMedia = true;
                 // eslint-disable-next-line functional/immutable-data
-                imageRelationshipAdditions.push({
+                wrapper.Images.push({
                     key,
                     mediaDatas,
                 });
@@ -173,7 +200,7 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
         map.set(key, json);
     }
 
-    for (const { key, mediaDatas } of imageRelationshipAdditions) {
+    for (const { key, mediaDatas } of wrapper.Images) {
         // eslint-disable-next-line functional/immutable-data
         const relationshipKey = `word/_rels/${key.split("/").pop()}.rels`;
         const relationshipsJson = map.get(relationshipKey) ?? createRelationshipFile();
@@ -194,7 +221,7 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
         }
     }
 
-    for (const { key, hyperlink } of hyperlinkRelationshipAdditions) {
+    for (const { key, hyperlink } of wrapper.Relationships.relationships) {
         // eslint-disable-next-line functional/immutable-data
         const relationshipKey = `word/_rels/${key.split("/").pop()}.rels`;
 
@@ -210,7 +237,14 @@ export const patchDocument = async (data: InputDataType, options: PatchDocumentO
         );
     }
 
-    if (hasMedia) {
+    for (const { abstractNumId, numId } of wrapper.Numberings) {
+        const numberingJson = map.get("word/numbering.xml")!;
+        map.set("word/numbering.xml", numberingJson);
+
+        appendNumbering(numberingJson, abstractNumId, numId);
+    }
+
+    if (wrapper.Images.length > 0) {
         const contentTypesJson = map.get("[Content_Types].xml");
 
         if (!contentTypesJson) {

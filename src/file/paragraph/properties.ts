@@ -3,6 +3,7 @@
 /* eslint-disable functional/immutable-data */
 import { IContext, IgnoreIfEmptyXmlComponent, IXmlableObject, OnOffElement, XmlComponent } from "@file/xml-components";
 import { DocumentWrapper } from "../document-wrapper";
+import { PatchDocumentWrapper } from "../../patcher/from-docx";
 import { IShadingAttributesProperties, Shading } from "../shading";
 import { Alignment, AlignmentType } from "./formatting/alignment";
 import { Border, IBordersOptions, ThematicBreak } from "./formatting/border";
@@ -219,6 +220,15 @@ export class ParagraphProperties extends IgnoreIfEmptyXmlComponent {
         if (context.viewWrapper instanceof DocumentWrapper) {
             for (const reference of this.numberingReferences) {
                 context.file.Numbering.createConcreteNumberingInstance(reference.reference, reference.instance);
+            }
+        }
+
+        if (context.viewWrapper instanceof PatchDocumentWrapper) {
+            for (const reference of this.numberingReferences) {
+                context.viewWrapper.Numberings.push({
+                    abstractNumId: reference.reference,
+                    numId: reference.instance,
+                });
             }
         }
 
